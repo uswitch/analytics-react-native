@@ -1,10 +1,14 @@
 import { getMockLogger } from '../__helpers__/mockLogger';
 import { SegmentClient } from '../../analytics';
 import { MockSegmentStore } from '../__helpers__/mockSegmentStore';
+import { SEGMENT_DESTINATION_KEY } from '../../plugins/SegmentDestination';
 
 describe('internal #getSettings', () => {
   const defaultIntegrationSettings = {
-    integrations: {},
+    integrations: {
+      // This one is injected by the mock
+      [SEGMENT_DESTINATION_KEY]: {},
+    },
   };
   const store = new MockSegmentStore();
 
@@ -30,7 +34,7 @@ describe('internal #getSettings', () => {
   });
 
   it('fetches the settings succesfully ', async () => {
-    const mockJSONResponse = { foo: 'bar' };
+    const mockJSONResponse = { integrations: { foo: 'bar' } };
     const mockResponse = Promise.resolve({
       json: () => mockJSONResponse,
     });
@@ -43,10 +47,10 @@ describe('internal #getSettings', () => {
       'https://cdn-settings.segment.com/v1/projects/123-456/settings'
     );
 
-    expect(setSettingsSpy).toHaveBeenCalledWith(mockJSONResponse);
-    expect(store.settings.get()).toEqual(mockJSONResponse);
+    expect(setSettingsSpy).toHaveBeenCalledWith(mockJSONResponse.integrations);
+    expect(store.settings.get()).toEqual(mockJSONResponse.integrations);
     expect(client.settings.get()).toEqual({
-      ...mockJSONResponse,
+      ...mockJSONResponse.integrations,
     });
   });
 

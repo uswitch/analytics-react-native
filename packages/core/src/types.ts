@@ -1,3 +1,5 @@
+import type { Persistor } from '@segment/sovran-react-native';
+
 export type JsonValue =
   | boolean
   | number
@@ -24,9 +26,11 @@ interface BaseEventType {
   messageId?: string;
   userId?: string;
   timestamp?: string;
+  traits?: UserTraits | GroupTraits;
 
   context?: PartialContext;
   integrations?: SegmentAPIIntegrations;
+  _metadata?: DestinationMetadata;
 }
 
 export interface TrackEventType extends BaseEventType {
@@ -43,13 +47,13 @@ export interface ScreenEventType extends BaseEventType {
 
 export interface IdentifyEventType extends BaseEventType {
   type: EventType.IdentifyEvent;
-  traits: UserTraits;
+  traits?: UserTraits;
 }
 
 export interface GroupEventType extends BaseEventType {
   type: EventType.GroupEvent;
   groupId: string;
-  traits: GroupTraits;
+  traits?: GroupTraits;
 }
 
 export interface AliasEventType extends BaseEventType {
@@ -117,23 +121,23 @@ export type Config = {
   flushAt?: number;
   flushInterval?: number;
   trackAppLifecycleEvents?: boolean;
-  retryInterval?: number;
   maxBatchSize?: number;
   trackDeepLinks?: boolean;
-  maxEventsToRetry?: number;
   defaultSettings?: SegmentAPISettings;
   autoAddSegmentDestination?: boolean;
   collectDeviceId?: boolean;
+  storePersistor?: Persistor;
+  proxy?: string;
 };
 
 export type ClientMethods = {
   screen: (name: string, properties?: JsonMap) => void;
   track: (event: string, properties?: JsonMap) => void;
-  identify: (userId: string, userTraits?: UserTraits) => void;
+  identify: (userId?: string, userTraits?: UserTraits) => void;
   flush: () => Promise<void>;
   group: (groupId: string, groupTraits?: GroupTraits) => void;
   alias: (newUserId: string) => void;
-  reset: () => void;
+  reset: (resetAnonymousId?: boolean) => void;
 };
 
 type ContextApp = {
@@ -153,6 +157,7 @@ export type ContextDevice = {
   adTrackingEnabled?: boolean; // ios only
   advertisingId?: string; // ios only
   trackingStatus?: string;
+  token?: string;
 };
 
 type ContextLibrary = {
@@ -258,6 +263,12 @@ export type SegmentAPISettings = {
   integrations: SegmentAPIIntegrations;
 };
 
+export type DestinationMetadata = {
+  bundled: string[];
+  unbundled: string[];
+  bundledIds: string[];
+};
+
 export enum PluginType {
   // Executed before event processing begins.
   'before' = 'before',
@@ -287,5 +298,5 @@ export enum EventType {
 export type UserInfoState = {
   anonymousId: string;
   userId?: string;
-  traits?: UserTraits;
+  traits?: UserTraits | GroupTraits;
 };

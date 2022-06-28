@@ -40,7 +40,7 @@ export class Plugin {
 }
 
 export class EventPlugin extends Plugin {
-  execute(event: SegmentEvent) {
+  execute(event: SegmentEvent): SegmentEvent | undefined {
     if (event === undefined) {
       return event;
     }
@@ -100,6 +100,19 @@ export class DestinationPlugin extends EventPlugin {
 
   timeline = new Timeline();
 
+  private hasSettings() {
+    return this.analytics?.settings.get()?.[this.key] !== undefined;
+  }
+
+  private isEnabled(event: SegmentEvent): boolean {
+    let customerDisabled = false;
+    if (event.integrations?.[this.key] === false) {
+      customerDisabled = true;
+    }
+
+    return this.hasSettings() && !customerDisabled;
+  }
+
   /**
      Adds a new plugin to the currently loaded set.
 
@@ -140,9 +153,37 @@ export class DestinationPlugin extends EventPlugin {
     this.timeline.remove(plugin);
   }
 
-  // find(pluginType: PluginType) {
-  //   // return this.timeline.find(pluginType);
-  // }
+  execute(event: SegmentEvent): SegmentEvent | undefined {
+    if (!this.isEnabled(event)) {
+      return undefined;
+    }
+
+    // Apply before and enrichment plugins
+    const beforeResult = this.timeline.applyPlugins({
+      type: PluginType.before,
+      event,
+    });
+
+    if (beforeResult === undefined) {
+      return;
+    }
+
+    const enrichmentResult = this.timeline.applyPlugins({
+      type: PluginType.enrichment,
+      event: beforeResult,
+    });
+
+    // Now send the event to the destination by executing the normal flow of an EventPlugin
+    super.execute(enrichmentResult);
+
+    // apply .after plugins
+    let afterResult = this.timeline.applyPlugins({
+      type: PluginType.after,
+      event: enrichmentResult,
+    });
+
+    return afterResult;
+  }
 }
 
 export class UtilityPlugin extends EventPlugin {}

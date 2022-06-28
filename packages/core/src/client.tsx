@@ -17,7 +17,10 @@ export const createClient = (config: Config) => {
   }
   const clientConfig = { ...defaultConfig, ...config };
 
-  const segmentStore = new SovranStorage(config.writeKey);
+  const segmentStore = new SovranStorage({
+    storeId: config.writeKey,
+    storePersistor: config.storePersistor,
+  });
 
   const client = new SegmentClient({
     config: clientConfig,
@@ -64,6 +67,6 @@ export const useAnalytics = (): ClientMethods => {
     flush: () => client.flush(),
     group: (...args) => client.group(...args),
     alias: (...args) => client.alias(...args),
-    reset: () => client.reset(),
+    reset: (...args) => client.reset(...args),
   };
 };

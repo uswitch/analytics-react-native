@@ -17,6 +17,7 @@ export class AdjustPlugin extends DestinationPlugin {
   key = 'Adjust';
 
   private settings: SegmentAdjustSettings | null = null;
+  private hasRegisteredCallback: boolean = false;
 
   update(settings: SegmentAPISettings, _: UpdateType) {
     const adjustSettings = settings.integrations[
@@ -35,6 +36,25 @@ export class AdjustPlugin extends DestinationPlugin {
 
     const adjustConfig = new AdjustConfig(this.settings.appToken, environment);
 
+    if (this.hasRegisteredCallback === false) {
+      adjustConfig.setAttributionCallbackListener((attribution) => {
+        let trackPayload = {
+          provider: 'Adjust',
+          trackerToken: attribution.trackerToken,
+          trackerName: attribution.trackerName,
+          campaign: {
+            source: attribution.network,
+            name: attribution.campaign,
+            content: attribution.clickLabel,
+            adCreative: attribution.creative,
+            adGroup: attribution.adgroup,
+          },
+        };
+        this.analytics?.track('Install Attributed', trackPayload);
+      });
+      this.hasRegisteredCallback = true;
+    }
+
     const bufferingEnabled = this.settings.setEventBufferingEnabled;
     if (bufferingEnabled) {
       adjustConfig.setEventBufferingEnabled(bufferingEnabled);
@@ -50,7 +70,6 @@ export class AdjustPlugin extends DestinationPlugin {
 
     Adjust.create(adjustConfig);
   }
-
   identify(event: IdentifyEventType) {
     identify(event);
     return event;

@@ -9,19 +9,17 @@ export const sendEvents = async ({
   config: Config;
   events: SegmentEvent[];
 }) => {
-  const updatedEvents = events.map((event) => ({
-    ...event,
-    sentAt: new Date().toISOString(),
-  }));
-
-  await fetch(batchApi, {
+  const requestUrl = config.proxy || batchApi;
+  await fetch(requestUrl, {
     method: 'POST',
     body: JSON.stringify({
-      batch: updatedEvents,
+      batch: events,
+      sentAt: new Date().toISOString(),
+      writeKey: config.writeKey,
     }),
     headers: {
       'Authorization': `Basic ${Base64.encode(`${config.writeKey}:`)}`,
-      'Content-Type': 'application/json',
+      'Content-Type': 'text/plain',
     },
   });
 };

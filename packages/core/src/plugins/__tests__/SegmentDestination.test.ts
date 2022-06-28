@@ -1,5 +1,8 @@
 import { EventType, SegmentEvent, TrackEventType } from '../../types';
-import { SegmentDestination } from '../SegmentDestination';
+import {
+  SegmentDestination,
+  SEGMENT_DESTINATION_KEY,
+} from '../SegmentDestination';
 import { SegmentClient } from '../../analytics';
 import { MockSegmentStore } from '../../__tests__/__helpers__/mockSegmentStore';
 import { getMockLogger } from '../../__tests__/__helpers__/mockLogger';
@@ -43,18 +46,20 @@ describe('SegmentDestination', () => {
 
   it('disables device mode plugins to prevent dups', () => {
     const plugin = new SegmentDestination();
-    plugin.analytics = new SegmentClient({
+    const analytics = new SegmentClient({
       ...clientArgs,
       store: new MockSegmentStore({
         settings: {
           firebase: {
             someConfig: 'someValue',
           },
+          [SEGMENT_DESTINATION_KEY]: {},
         },
       }),
     });
+    plugin.configure(analytics);
 
-    plugin.analytics.getPlugins = jest.fn().mockReturnValue([
+    plugin.analytics!.getPlugins = jest.fn().mockReturnValue([
       {
         key: 'firebase',
         type: 'destination',
@@ -72,14 +77,95 @@ describe('SegmentDestination', () => {
       integrations: {},
     };
 
-    const expectedIntegrations = {
-      firebase: false,
+    const result = plugin.execute(event);
+    expect(result).toEqual({
+      ...event,
+      _metadata: {
+        bundled: ['firebase'],
+        unbundled: [],
+        bundledIds: [],
+      },
+    });
+  });
+
+  it('marks unbundled plugins where the cloud mode is disabled', () => {
+    const plugin = new SegmentDestination();
+    const analytics = new SegmentClient({
+      ...clientArgs,
+      store: new MockSegmentStore({
+        settings: {
+          [SEGMENT_DESTINATION_KEY]: {
+            unbundledIntegrations: ['firebase'],
+            maybeBundledConfigIds: {},
+          },
+        },
+      }),
+    });
+    plugin.configure(analytics);
+
+    plugin.analytics!.getPlugins = jest.fn().mockReturnValue([
+      {
+        key: 'firebase',
+        type: 'destination',
+      },
+    ]);
+
+    const event: TrackEventType = {
+      anonymousId: '3534a492-e975-4efa-a18b-3c70c562fec2',
+      event: 'Awesome event',
+      type: EventType.TrackEvent,
+      properties: {},
+      timestamp: '2000-01-01T00:00:00.000Z',
+      messageId: '1d1744bf-5beb-41ac-ad7a-943eac33babc',
+      context: { app: { name: 'TestApp' } },
+      integrations: {},
     };
 
     const result = plugin.execute(event);
     expect(result).toEqual({
       ...event,
-      integrations: expectedIntegrations,
+      _metadata: {
+        bundled: [],
+        unbundled: ['firebase'],
+        bundledIds: [],
+      },
+    });
+  });
+
+  it('marks maybeBundled integrations to unbundled if they are not bundled', () => {
+    const plugin = new SegmentDestination();
+    const analytics = new SegmentClient({
+      ...clientArgs,
+      store: new MockSegmentStore({
+        settings: {
+          [SEGMENT_DESTINATION_KEY]: {
+            unbundledIntegrations: ['Amplitude'],
+            maybeBundledConfigIds: { Mixpanel: ['123'] },
+          },
+        },
+      }),
+    });
+    plugin.configure(analytics);
+
+    const event: TrackEventType = {
+      anonymousId: '3534a492-e975-4efa-a18b-3c70c562fec2',
+      event: 'Awesome event',
+      type: EventType.TrackEvent,
+      properties: {},
+      timestamp: '2000-01-01T00:00:00.000Z',
+      messageId: '1d1744bf-5beb-41ac-ad7a-943eac33babc',
+      context: { app: { name: 'TestApp' } },
+      integrations: {},
+    };
+
+    const result = plugin.execute(event);
+    expect(result).toEqual({
+      ...event,
+      _metadata: {
+        bundled: [],
+        unbundled: ['Amplitude', 'Mixpanel'],
+        bundledIds: [],
+      },
     });
   });
 
@@ -93,6 +179,7 @@ describe('SegmentDestination', () => {
           firebase: {
             someConfig: 'someValue',
           },
+          [SEGMENT_DESTINATION_KEY]: {},
         },
       }),
     });
@@ -161,5 +248,34 @@ describe('SegmentDestination', () => {
         ...e,
       })),
     });
+  });
+
+  it('lets plugins/events disable destinations individually', () => {
+    const plugin = new SegmentDestination();
+    // @ts-ignore
+    plugin.analytics = new SegmentClient({
+      ...clientArgs,
+      store: new MockSegmentStore({
+        settings: {
+          [SEGMENT_DESTINATION_KEY]: {},
+        },
+      }),
+    });
+
+    const event: TrackEventType = {
+      anonymousId: '3534a492-e975-4efa-a18b-3c70c562fec2',
+      event: 'Awesome event',
+      type: EventType.TrackEvent,
+      properties: {},
+      timestamp: '2000-01-01T00:00:00.000Z',
+      messageId: '1d1744bf-5beb-41ac-ad7a-943eac33babc',
+      context: { app: { name: 'TestApp' } },
+      integrations: {
+        [SEGMENT_DESTINATION_KEY]: false,
+      },
+    };
+
+    const result = plugin.execute(event);
+    expect(result).toEqual(undefined);
   });
 });

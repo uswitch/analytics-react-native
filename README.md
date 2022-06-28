@@ -1,47 +1,54 @@
-# @segment/analytics-react-native [![circleci][circleci-image]][circleci-url]
+# @segment/analytics-react-native
 
 The hassle-free way to add Segment analytics to your React-Native app.
-
-NOTE: This project is currently in development and is covered by Segment's [First Access & Beta Preview Terms](https://segment.com/legal/first-access-beta-preview/). We encourage you to try out this new library. Please provide feedback via Github issues/PRs, and feel free to submit pull requests. Customers should not use this library for production applications during our Pilot and Beta phases.
 
 ⚠️ This readme covers `analytics-react-native 2.0.0` and greater. The code and readme for `analytics-react-native` versions below `2.0.0` can be found on the `analytics-react-native-v1` branch.  
 
 ## Table of Contents
 
-- [Installation](#installation)
-  - [Permissions](#permissions)
-- [Migration](#migrating)
-- [Usage](#usage)
-  - [Setting up the client](#setting-up-the-client)
-  - [Client options](#client-options)
-  - [Usage with hooks](#usage-with-hooks)
-  - [useAnalytics](#useanalytics)
-  - [Usage without hooks](#usage-without-hooks)
-- [Client methods](#client-methods)
-  - [Track](#track)
-  - [Screen](#screen)
-  - [Identify](#identify)
-  - [Group](#group)
-  - [Alias](#alias)
-  - [Reset](#reset)
-  - [Flush](#flush)
-  - [Advanced Cleanup](#advanced-cleanup)
-- [Automatic screen tracking](#automatic-screen-tracking)
-  - [React Navigation](#react-navigation)
-  - [React Native Navigation](#react-native-navigation)
-- [Plugin Architecture](#plugin-types)
-- [Contributing](#contributing)
-- [Code of Conduct](#code-of-conduct)
-- [License](#license)
+- [@segment/analytics-react-native](#segmentanalytics-react-native)
+  - [Table of Contents](#table-of-contents)
+  - [Installation](#installation)
+    - [Expo](#expo)
+    - [Permissions](#permissions)
+  - [Migrating](#migrating)
+  - [Usage](#usage)
+    - [Setting up the client](#setting-up-the-client)
+    - [Client Options](#client-options)
+    - [iOS Deep Link Tracking Setup](#ios-deep-link-tracking-setup)
+    - [Usage with hooks](#usage-with-hooks)
+    - [useAnalytics()](#useanalytics)
+    - [Usage without hooks](#usage-without-hooks)
+  - [Client methods](#client-methods)
+    - [Track](#track)
+    - [Screen](#screen)
+    - [Identify](#identify)
+    - [Group](#group)
+    - [Alias](#alias)
+    - [Reset](#reset)
+    - [Flush](#flush)
+    - [(Advanced) Cleanup](#advanced-cleanup)
+  - [Automatic screen tracking](#automatic-screen-tracking)
+    - [React Navigation](#react-navigation)
+    - [React Native Navigation](#react-native-navigation)
+  - [Plugins + Timeline architecture](#plugins--timeline-architecture)
+    - [Plugin Types](#plugin-types)
+    - [Destination Plugins](#destination-plugins)
+    - [Adding Plugins](#adding-plugins)
+    - [Writing your own Plugins](#writing-your-own-plugins)
+    - [Supported Plugins](#supported-plugins)
+  - [Contributing](#contributing)
+  - [Code of Conduct](#code-of-conduct)
+  - [License](#license)
 
 ## Installation
 
-Install `@segment/analytics-react-native` and [`react-native-async-storage/async-storage`](https://github.com/react-native-async-storage/async-storage): 
+Install `@segment/analytics-react-native`,  [`@segment/sovran-react-native`](https://github.com/segmentio/sovran-react-native) and [`react-native-async-storage/async-storage`](https://github.com/react-native-async-storage/async-storage): 
 
 ```sh
-yarn add @segment/analytics-react-native @react-native-async-storage/async-storage
+yarn add @segment/analytics-react-native @segment/sovran-react-native @react-native-async-storage/async-storage 
 # or
-npm install --save @segment/analytics-react-native @react-native-async-storage/async-storage
+npm install --save @segment/analytics-react-native @segment/sovran-react-native @react-native-async-storage/async-storage
 ```
 
 For iOS, install native modules with:
@@ -51,8 +58,11 @@ npx pod-install
 ```
 ⚠️ For Android, you will have to add some extra permissions to your `AndroidManifest.xml`.
 
+### Expo 
+
 🚀 `@segment/analytics-react-native 2.0` is compatible with Expo's [Custom Dev Client](https://docs.expo.dev/clients/getting-started/) and [EAS builds](https://docs.expo.dev/build/introduction/) without any additional configuration. Destination Plugins that require native modules may require custom [Expo Config Plugins](https://docs.expo.dev/guides/config-plugins/).
 
+⚠️ `@segment/analytics-react-native 2.0` is not compatible with Expo Go. 
 ### Permissions
 
 <details>
@@ -88,22 +98,41 @@ You must pass at least the `writeKey`. Additional configuration options are list
   
 ### Client Options
 
-| Name                       | Default   | Description                                                                                                                          |
-| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `writeKey` **(REQUIRED)**  | ''        | Your Segment API key.                                                                                                                |
-| `debug`                    | true\*    | When set to false, it will not generate any logs.                                                                                    |
-| `flushAt`                  | 20        | How many events to accumulate before sending events to the backend.                                                                  |
-| `flushInterval`            | 30        | In seconds, how often to send events to the backend.                                                                                 |
-| `retryInterval`            | 60        | In seconds, how often to to retry sending events the request failed (e.g. in case of a network failure).                             |
-| `maxBatchSize`             | 1000      | How many events to send to the API at once                                                                                           |
-| `maxEventsToRetry`         | 1000      | How many events to keep around for to retry sending if the initial request failed                                                    |
+| Name                       | Default   | Description                                                                                                                                    |
+| -------------------------- | --------- | -----------------------------------------------------------------------------------------------------------------------------------------------|
+| `writeKey` **(REQUIRED)**  | ''        | Your Segment API key.                                                                                                                          |
+| `debug`                    | true\*    | When set to false, it will not generate any logs.                                                                                              |
+| `flushAt`                  | 20        | How many events to accumulate before sending events to the backend.                                                                            |
+| `flushInterval`            | 30        | In seconds, how often to send events to the backend.                                                                                           |
+| `maxBatchSize`             | 1000      | How many events to send to the API at once                                                                                                     |
 | `trackAppLifecycleEvents`  | false     | Enable automatic tracking for [app lifecycle events](https://segment.com/docs/connections/spec/mobile/#lifecycle-events): application installed, opened, updated, backgrounded) |
-| `trackDeepLinks`           | false     | Enable automatic tracking for when the user opens the app via a deep link                                                            |
-| `defaultSettings`          | undefined | Settings that will be used if the request to get the settings from Segment fails                                                     |
-| `autoAddSegmentDestination`| true      | Set to false to skip adding the SegmentDestination plugin                                                                            |
+| `trackDeepLinks`           | false     | Enable automatic tracking for when the user opens the app via a deep link (Note: Requires additional setup on iOS, [see instructions](#ios-deep-link-tracking-setup))                                                            |
+| `defaultSettings`          | undefined | Settings that will be used if the request to get the settings from Segment fails                                                               |
+| `autoAddSegmentDestination`| true      | Set to false to skip adding the SegmentDestination plugin                                                                                      |
+| `storePersistor`           | undefined | A custom persistor for the store that `analytics-react-native` leverages. Must match `Persistor` interface exported from [sovran-react-native](https://github.com/segmentio/sovran-react-native).|
+| `proxy`                    | undefined | `proxy` is a batch url to post to instead of 'https://api.segment.io/v1/b'.                                                                    |
+
 
 \* The default value of `debug` will be false in production.
 
+### iOS Deep Link Tracking Setup
+*Note: This is only required for iOS if you are using the `trackDeepLinks` option. Android does not require any additional setup*
+
+To track deep links in iOS you must add the following to your `AppDelegate.m` file:
+
+```objc
+  @import segment_analytics_react_native;
+  
+  ...
+  
+- (BOOL)application:(UIApplication *)application
+            openURL: (NSURL *)url
+            options:(nonnull NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options {
+  
+  [AnalyticsReactNative trackDeepLink:url withOptions:options];  
+  return YES;
+}
+```
 ### Usage with hooks
 
 In order to use the `useAnalytics` hook within the application, we will additionally need to wrap the application in
@@ -345,42 +374,28 @@ Our [example app](./example) is set up with screen tracking using React Navigati
 
 Essentially what we'll do is find the root level navigation container and call `screen()` whenever user has navigated to a new screen.
 
-Find the file where you've used the `NavigationContainer` - the main top level container for React Navigation. In this component, create a new state variable to store the current route name:
+Find the file where you've used the `NavigationContainer` - the main top level container for React Navigation. In this component, create 2 new refs to store the `navigation` object and the current route name:
 
 ```js
-const [routeName, setRouteName] = useState('Unknown');
+const navigationRef = useRef(null);
+const routeNameRef = useRef(null);
 ```
 
-Now, outside of the component, create a utility function for determining the name of the selected route:
-
-```js
-const getActiveRouteName = (
-  state: NavigationState | PartialState<NavigationState> | undefined
-): string => {
-  if (!state || typeof state.index !== 'number') {
-    return 'Unknown';
-  }
-
-  const route = state.routes[state.index];
-
-  if (route.state) {
-    return getActiveRouteName(route.state);
-  }
-
-  return route.name;
-};
-```
-
-Finally, pass a function in the `onStateChange` prop of your `NavigationContainer` that checks for the active route name and calls `client.screen()` if the route has changes. You can pass in any additional screen parameters as the second argument for screen call as needed.
+Next, pass the ref to `NavigationContainer` and a function in the `onReady` prop to store the initial route name. Finally, pass a function in the `onStateChange` prop of your `NavigationContainer` that checks for the active route name and calls `client.screen()` if the route has changes. You can pass in any additional screen parameters as the second argument for screen call as needed.
 
 ```js
 <NavigationContainer
-  onStateChange={(state) => {
-    const newRouteName = getActiveRouteName(state);
+  ref={navigationRef}
+  onReady={() => {
+    routeNameRef.current = navigationRef.current.getCurrentRoute().name;
+  }}
+  onStateChange={() => {
+    const previousRouteName = routeNameRef.current;
+    const currentRouteName = navigationRef.current?.getCurrentRoute().name;
 
-    if (routeName !== newRouteName) {
-      segmentClient.screen(newRouteName);
-      setRouteName(newRouteName);
+    if (previousRouteName !== currentRouteName) {
+      segmentClient.screen(currentRouteName);
+      routeNameRef.current = currentRouteName;
     }
   }}
 >
@@ -428,7 +443,7 @@ You can add a plugin at any time through the `segmentClient.add()` method.
 ```js
 import { createClient } from '@segment/analytics-react-native';
 
-import { AmplitudeSessionPlugin } from '@segment/analytics-react-native-plugin-amplitude';
+import { AmplitudeSessionPlugin } from '@segment/analytics-react-native-plugin-amplitude-session';
 import { FirebasePlugin } from '@segment/analytics-react-native-plugin-firebase';
 import { IdfaPlugin } from '@segment/analytics-react-native-plugin-idfa';
 
@@ -489,20 +504,21 @@ segmentClient.add({ plugin: new Logger() });
 
 As it overrides the `execute()` method, this `Logger` will call `console.log` for every event going through the Timeline.
   
-### Example Plugins 
+### Supported Plugins 
   
-Refer to the following table for example Plugins you can use and alter to meet your tracking needs:
+Refer to the following table for Plugins you can use to meet your tracking needs:
   
 | Plugin      | Package     |
 | ----------- | ----------- |
-| Adjust      | `@segment/analytics-react-native-plugin-adjust`|
-| Amplitude Sessions      | `@segment/analytics-react-native-plugin-amplitude-session`|
-| AppsFlyer    | `@segment/analytics-react-native-plugin-appsflyer`|
-| Braze      | `@segment/analytics-react-native-plugin-braze`|
-| Consent Manager     | `@segment/analytics-react-native-plugin-adjust`|
-| Facebook App Events    | `@segment/analytics-react-native-plugin-facebook-app-events` |
-| Firebase      | `@segment/analytics-react-native-plugin-consent-firebase`|
-| IDFA     | `@segment/analytics-react-native-plugin-idfa` |
+| [Adjust](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-adjust)      | `@segment/analytics-react-native-plugin-adjust`|
+| [Amplitude Sessions](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-amplitudeSession)      | `@segment/analytics-react-native-plugin-amplitude-session`|
+| [AppsFlyer](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-appsflyer)    | `@segment/analytics-react-native-plugin-appsflyer`|
+| [Braze](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-braze)      | `@segment/analytics-react-native-plugin-braze`|
+| [Facebook App Events](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-facebook-app-events)    | `@segment/analytics-react-native-plugin-facebook-app-events` |
+| [Firebase](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-firebase)      | `@segment/analytics-react-native-plugin-firebase`|
+| [IDFA](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-idfa)     | `@segment/analytics-react-native-plugin-idfa` |
+| [Mixpanel](https://github.com/segmentio/analytics-react-native/tree/master/packages/plugins/plugin-mixpanel)    | `@segment/analytics-react-native-plugin-mixpanel` |
+| [Taplytics](https://github.com/taplytics/segment-react-native-plugin-taplytics)     | `@taplytics/segment-react-native-plugin-taplytics` |
 
   
   

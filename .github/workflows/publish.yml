@@ -1,0 +1,66 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: 'Workspace to publish. (Leave empty to release everything that needs a release) e.g. core, plugin-idfa'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+      NPM_TOKEN:
+        required: true
+
+jobs:
+  publish:
+    name: Publish to npm
+    environment: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with: 
+          persist-credentials: false
+          token: ${{ secrets.GH_TOKEN }}
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+          cache: 'yarn'
+
+      - name: Config and Build
+        run: |
+          npm config set //registry.npmjs.org/:_authToken ${NPM_TOKEN}
+          yarn install --frozen-lockfile
+          yarn build
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Set Working Directory
+        if: github.event.inputs.workspace != ''
+        env: 
+          IS_PLUGIN: ${{ startsWith(github.event.inputs.workspace, 'plugin-') }}
+        run: |
+          if ${IS_PLUGIN}; then
+            echo "DIR=packages/plugins/${{github.event.inputs.workspace}}" >> $GITHUB_ENV
+          else
+            echo "DIR=packages/${{github.event.inputs.workspace}}" >> $GITHUB_ENV
+          fi
+          echo "Setting working directory to: WORKSPACE=$DIR"
+
+      - name: Publish (Workspace)
+        if: github.event.inputs.workspace != ''
+        working-directory: ${{env.DIR}}
+        run: yarn release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Publish (All)
+        if: github.event.inputs.workspace == ''
+        run: yarn workspaces run release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

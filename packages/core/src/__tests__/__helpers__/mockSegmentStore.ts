@@ -1,4 +1,5 @@
-import type { Storage } from '../../storage';
+import { SEGMENT_DESTINATION_KEY } from '../../plugins/SegmentDestination';
+import type { DeepLinkData, Storage } from '../../storage';
 import type {
   Context,
   DeepPartial,
@@ -7,6 +8,7 @@ import type {
   SegmentEvent,
   UserInfoState,
 } from '../../types';
+import { createCallbackManager } from './utils';
 
 type Data = {
   isReady: boolean;
@@ -14,17 +16,24 @@ type Data = {
   context?: DeepPartial<Context>;
   settings: SegmentAPIIntegrations;
   userInfo: UserInfoState;
+  deepLinkData: DeepLinkData;
 };
 
 const INITIAL_VALUES: Data = {
   isReady: true,
   events: [],
   context: undefined,
-  settings: {},
+  settings: {
+    [SEGMENT_DESTINATION_KEY]: {},
+  },
   userInfo: {
     anonymousId: 'anonymousId',
     userId: undefined,
     traits: undefined,
+  },
+  deepLinkData: {
+    referring_application: '',
+    url: '',
   },
 };
 
@@ -38,37 +47,17 @@ export class MockSegmentStore implements Storage {
 
   constructor(initialData?: Partial<Data>) {
     this.data = { ...INITIAL_VALUES, ...initialData };
-    this.initialData = { ...INITIAL_VALUES, ...initialData };
+    this.initialData = JSON.parse(
+      JSON.stringify({ ...INITIAL_VALUES, ...initialData })
+    );
   }
 
-  // Callbacks
-  private createCallbackManager = <V, R = void>() => {
-    type Callback = (value: V) => R;
-    const callbacks: Callback[] = [];
-
-    const deregister = (callback: Callback) => {
-      callbacks.splice(callbacks.indexOf(callback), 1);
-    };
-
-    const register = (callback: Callback) => {
-      callbacks.push(callback);
-      return () => {
-        deregister(callback);
-      };
-    };
-
-    const run = (value: V) => {
-      callbacks.forEach((callback) => callback(value));
-    };
-
-    return { register, deregister, run };
-  };
-
   private callbacks = {
-    context: this.createCallbackManager<DeepPartial<Context> | undefined>(),
-    settings: this.createCallbackManager<SegmentAPIIntegrations>(),
-    events: this.createCallbackManager<SegmentEvent[]>(),
-    userInfo: this.createCallbackManager<UserInfoState>(),
+    context: createCallbackManager<DeepPartial<Context> | undefined>(),
+    settings: createCallbackManager<SegmentAPIIntegrations>(),
+    events: createCallbackManager<SegmentEvent[]>(),
+    userInfo: createCallbackManager<UserInfoState>(),
+    deepLinkData: createCallbackManager<DeepLinkData>(),
   };
 
   readonly isReady = {
@@ -88,6 +77,7 @@ export class MockSegmentStore implements Storage {
     set: (value: DeepPartial<Context>) => {
       this.data.context = { ...value };
       this.callbacks.context.run(value);
+      return this.data.context;
     },
   };
 
@@ -99,6 +89,7 @@ export class MockSegmentStore implements Storage {
     set: (value: SegmentAPIIntegrations) => {
       this.data.settings = value;
       this.callbacks.settings.run(value);
+      return this.data.settings;
     },
     add: (key: string, value: IntegrationSettings) => {
       this.data.settings[key] = value;
@@ -132,6 +123,19 @@ export class MockSegmentStore implements Storage {
     set: (value: UserInfoState) => {
       this.data.userInfo = value;
       this.callbacks.userInfo.run(value);
+      return this.data.userInfo;
     },
+  };
+
+  readonly deepLinkData = {
+    get: () => {
+      return this.data.deepLinkData;
+    },
+    set: (value: DeepLinkData) => {
+      this.data.deepLinkData = value;
+      this.callbacks.deepLinkData.run(value);
+    },
+    onChange: (callback: (value: DeepLinkData) => void) =>
+      this.callbacks.deepLinkData.register(callback),
   };
 }

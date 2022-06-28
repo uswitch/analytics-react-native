@@ -1,7 +1,8 @@
-import { AppState, AppStateStatus, Linking } from 'react-native';
 import type { Unsubscribe } from '@segment/sovran-react-native';
+import deepmerge from 'deepmerge';
+import { AppState, AppStateStatus } from 'react-native';
+import { settingsCDN } from './constants';
 import { getContext } from './context';
-
 import {
   applyRawEventData,
   createAliasEvent,
@@ -14,23 +15,26 @@ import type { Logger } from './logger';
 import type { DestinationPlugin, PlatformPlugin, Plugin } from './plugin';
 import { InjectContext } from './plugins/Context';
 import { SegmentDestination } from './plugins/SegmentDestination';
-import type { Settable, Storage, Watchable } from './storage';
+import type { DeepLinkData, Settable, Storage, Watchable } from './storage';
 import { Timeline } from './timeline';
 import {
   Config,
   Context,
   DeepPartial,
   GroupTraits,
+  IntegrationSettings,
   JsonMap,
   PluginType,
   SegmentAPIIntegrations,
-  SegmentAPISettings,
   SegmentEvent,
+  UpdateType,
   UserInfoState,
   UserTraits,
 } from './types';
-import { getPluginsWithFlush } from './util';
+import { getPluginsWithFlush, getPluginsWithReset } from './util';
 import { getUUID } from './uuid';
+
+type OnContextLoadCallback = (type: UpdateType) => void | Promise<void>;
 
 export class SegmentClient {
   // the config parameters for the client - a merge of user provided and default options
@@ -38,9 +42,6 @@ export class SegmentClient {
 
   // Storage
   private store: Storage;
-
-  // how many seconds has elapsed since the last time events were sent
-  private secondsElapsed: number = 0;
 
   // current app state
   private appState: AppStateStatus | 'unknown' = 'unknown';
@@ -53,9 +54,6 @@ export class SegmentClient {
 
   // internal time to know when to flush, ticks every second
   private flushInterval: ReturnType<typeof setInterval> | null = null;
-
-  // Watcher for isReady updates to the storage
-  private readinessWatcher?: Unsubscribe = undefined;
 
   // unsubscribe watchers for the store
   private watchers: Unsubscribe[] = [];
@@ -70,11 +68,15 @@ export class SegmentClient {
 
   private timeline: Timeline;
 
-  // mechanism to prevent adding plugins before we are fully initalised
-  private isStorageReady = false;
+  private pendingEvents: SegmentEvent[] = [];
+
   private pluginsToAdd: Plugin[] = [];
 
   private isInitialized = false;
+
+  private isContextLoaded = false;
+
+  private onContextLoadedCallback: OnContextLoadCallback | undefined;
 
   get platformPlugins() {
     const plugins: PlatformPlugin[] = [];
@@ -117,6 +119,8 @@ export class SegmentClient {
    * Access or subscribe to user info (anonymousId, userId, traits)
    */
   readonly userInfo: Watchable<UserInfoState>;
+
+  readonly deepLinkData: Watchable<DeepLinkData>;
 
   /**
    * Returns the plugins currently loaded in the timeline
@@ -167,9 +171,6 @@ export class SegmentClient {
       this.add({ plugin: segmentDestination });
     }
 
-    // Setup platform specific plugins
-    this.platformPlugins.forEach((plugin) => this.add({ plugin: plugin }));
-
     // Initialize the watchables
     this.context = {
       get: this.store.context.get,
@@ -199,6 +200,17 @@ export class SegmentClient {
       get: this.store.events.get,
       onChange: this.store.events.onChange,
     };
+
+    // Watch for isReady so that we can handle any pending events
+    // Delays events processing in the timeline until the store is ready to prevent missing data injected from the plugins
+    this.store.isReady.onChange((value) => this.onStorageReady(value));
+
+    // Setup platform specific plugins
+    this.platformPlugins.forEach((plugin) => this.add({ plugin: plugin }));
+    this.deepLinkData = {
+      get: this.store.deepLinkData.get,
+      onChange: this.store.deepLinkData.onChange,
+    };
   }
 
   /**
@@ -211,16 +223,10 @@ export class SegmentClient {
       return;
     }
 
-    // Plugin interval check
-    if (this.store.isReady.get()) {
-      this.onStorageReady(true);
-    } else {
-      this.store.isReady.onChange((value) => this.onStorageReady(value));
-    }
     await this.fetchSettings();
 
     // flush any stored events
-    this.flush();
+    this.flush(false);
 
     // set up the timer/subscription for knowing when to flush events
     this.setupInterval();
@@ -239,13 +245,14 @@ export class SegmentClient {
   }
 
   async fetchSettings() {
-    const settingsEndpoint = `https://cdn-settings.segment.com/v1/projects/${this.config.writeKey}/settings`;
+    const settingsEndpoint = `${settingsCDN}/${this.config.writeKey}/settings`;
 
     try {
       const res = await fetch(settingsEndpoint);
       const resJson = await res.json();
+      const integrations = resJson.integrations;
       this.logger.info(`Received settings from Segment succesfully.`);
-      this.store.settings.set(resJson);
+      this.store.settings.set(integrations);
     } catch {
       this.logger.warn(
         `Could not receive settings from Segment. ${
@@ -290,7 +297,6 @@ export class SegmentClient {
       clearInterval(this.flushInterval);
     }
 
-    this.unsubscribeReadinessWatcher();
     this.unsubscribeStorageWatchers();
 
     this.appStateSubscription?.remove();
@@ -303,7 +309,10 @@ export class SegmentClient {
     if (this.flushInterval !== null && this.flushInterval !== undefined) {
       clearInterval(this.flushInterval);
     }
-    this.flushInterval = setInterval(() => this.tick(), 1000) as any;
+
+    this.flushInterval = setTimeout(() => {
+      this.flush();
+    }, this.config.flushInterval! * 1000);
   }
 
   private setupStorageSubscribers() {
@@ -342,23 +351,26 @@ export class SegmentClient {
 
   /**
    * Adds a new plugin to the currently loaded set.
-   * @param {{ plugin: Plugin, settings?: SegmentAPISettings }} Plugin to be added. Settings are optional if you want to force a configuration instead of the Segment Cloud received one
+   * @param {{ plugin: Plugin, settings?: IntegrationSettings }} Plugin to be added. Settings are optional if you want to force a configuration instead of the Segment Cloud received one
    */
-  add({
+  add<P extends Plugin>({
     plugin,
     settings,
   }: {
-    plugin: Plugin;
-    settings?: Plugin extends DestinationPlugin ? SegmentAPISettings : never;
+    plugin: P;
+    settings?: P extends DestinationPlugin ? IntegrationSettings : never;
   }) {
     // plugins can either be added immediately or
     // can be cached and added later during the next state update
     // this is to avoid adding plugins before network requests made as part of setup have resolved
     if (settings !== undefined && plugin.type === PluginType.destination) {
-      this.store.settings.add((plugin as DestinationPlugin).key, settings);
+      this.store.settings.add(
+        (plugin as unknown as DestinationPlugin).key,
+        settings
+      );
     }
 
-    if (!this.isStorageReady) {
+    if (!this.store.isReady.get()) {
       this.pluginsToAdd.push(plugin);
     } else {
       this.addPlugin(plugin);
@@ -381,67 +393,82 @@ export class SegmentClient {
 
   process(incomingEvent: SegmentEvent) {
     const event = applyRawEventData(incomingEvent, this.store.userInfo.get());
-    this.timeline.process(event);
+    if (this.store.isReady.get() === true) {
+      this.timeline.process(event);
+    } else {
+      this.pendingEvents.push(event);
+    }
   }
 
   private async trackDeepLinks() {
-    const url = await Linking.getInitialURL();
+    if (this.getConfig().trackDeepLinks === true) {
+      const deepLinkProperties = this.store.deepLinkData.get();
+      this.trackDeepLinkEvent(deepLinkProperties);
 
-    if (url && this.getConfig().trackDeepLinks) {
+      this.store.deepLinkData.onChange((data) => {
+        this.trackDeepLinkEvent(data);
+      });
+    }
+  }
+
+  private trackDeepLinkEvent(deepLinkProperties: DeepLinkData) {
+    if (deepLinkProperties.url !== '') {
       const event = createTrackEvent({
         event: 'Deep Link Opened',
         properties: {
-          url,
+          ...deepLinkProperties,
         },
       });
+
       this.process(event);
       this.logger.info('TRACK (Deep Link Opened) event saved', event);
     }
   }
 
-  private unsubscribeReadinessWatcher() {
-    this.readinessWatcher?.();
-  }
-
+  /**
+   * Executes when the state store is initialized.
+   * @param isReady
+   */
   private onStorageReady(isReady: boolean) {
-    if (isReady && this.pluginsToAdd.length > 0 && !this.isAddingPlugins) {
-      this.isAddingPlugins = true;
-      try {
-        // start by adding the plugins
-        this.pluginsToAdd.forEach((plugin) => {
-          this.addPlugin(plugin);
-        });
+    if (isReady) {
+      // Add all plugins awaiting store
+      if (this.pluginsToAdd.length > 0 && !this.isAddingPlugins) {
+        this.isAddingPlugins = true;
+        try {
+          // start by adding the plugins
+          this.pluginsToAdd.forEach((plugin) => {
+            this.addPlugin(plugin);
+          });
 
-        // now that they're all added, clear the cache
-        // this prevents this block running for every update
-        this.pluginsToAdd = [];
-
-        // finally set the flag which means plugins will be added + registered immediately in future
-        this.isStorageReady = true;
-        this.unsubscribeReadinessWatcher();
-      } finally {
-        this.isAddingPlugins = false;
+          // now that they're all added, clear the cache
+          // this prevents this block running for every update
+          this.pluginsToAdd = [];
+        } finally {
+          this.isAddingPlugins = false;
+        }
       }
+
+      // Send all events in the queue
+      for (const e of this.pendingEvents) {
+        this.timeline.process(e);
+      }
+      this.pendingEvents = [];
     }
   }
 
-  private tick() {
-    if (this.secondsElapsed + 1 >= this.config.flushInterval!) {
-      this.flush();
-    } else {
-      this.secondsElapsed += 1;
+  async flush(debounceInterval: boolean = true) {
+    if (this.destroyed) {
+      return;
     }
-  }
 
-  async flush() {
+    if (debounceInterval) {
+      // Reset interval
+      this.setupInterval();
+    }
+
     if (!this.isPendingUpload) {
       this.isPendingUpload = true;
       try {
-        if (this.destroyed) {
-          return;
-        }
-
-        this.secondsElapsed = 0;
         const events = this.store.events.get();
 
         if (events.length > 0) {
@@ -475,7 +502,7 @@ export class SegmentClient {
     this.logger.info('TRACK event saved', event);
   }
 
-  identify(userId: string, userTraits?: UserTraits) {
+  identify(userId?: string, userTraits?: UserTraits) {
     const userInfo = this.store.userInfo.get();
     const { traits: currentUserTraits } = userInfo;
 
@@ -491,7 +518,7 @@ export class SegmentClient {
 
     this.store.userInfo.set({
       ...userInfo,
-      userId: userId,
+      userId: userId ?? userInfo.userId,
       traits: mergedTraits,
     });
 
@@ -550,8 +577,15 @@ export class SegmentClient {
 
     const previousContext = this.store.context.get();
 
-    this.store.context.set(context);
+    // Only overwrite the previous context values to preserve any values that are added by enrichment plugins like IDFA
+    await this.store.context.set(deepmerge(previousContext ?? {}, context));
 
+    // Only callback during the intial context load
+    if (this.onContextLoadedCallback !== undefined && !this.isContextLoaded) {
+      this.onContextLoadedCallback(UpdateType.initial);
+    }
+
+    this.isContextLoaded = true;
     if (!this.config.trackAppLifecycleEvents) {
       return;
     }
@@ -635,12 +669,35 @@ export class SegmentClient {
     this.appState = nextAppState;
   }
 
-  reset() {
+  reset(resetAnonymousId: boolean = true) {
+    const anonymousId =
+      resetAnonymousId === true
+        ? getUUID()
+        : this.store.userInfo.get().anonymousId;
+
     this.store.userInfo.set({
-      anonymousId: getUUID(),
+      anonymousId,
       userId: undefined,
       traits: undefined,
     });
+
+    getPluginsWithReset(this.timeline).forEach((plugin) => plugin.reset());
+
     this.logger.info('Client has been reset');
+  }
+
+  /**
+   * Registers a callback for when the client has loaded the device context. This happens at the startup of the app, but
+   * it is handy for plugins that require context data during configure as it guarantees the context data is available.
+   *
+   * If the context is already loaded it will call the callback immediately.
+   *
+   * @param callback Function to call when context is ready.
+   */
+  onContextLoaded(callback: OnContextLoadCallback) {
+    this.onContextLoadedCallback = callback;
+    if (this.isContextLoaded) {
+      this.onContextLoadedCallback(UpdateType.initial);
+    }
   }
 }

@@ -13,12 +13,25 @@ export const startServer = async (mockServerListener) => {
   return new Promise((resolve) => {
     const app = express();
 
-    app.use(bodyParser.json());
+    app.use(bodyParser.text());
 
-    app.post('/', (req, res) => {
+    // Handles batch events
+    app.post('/events', (req, res) => {
       console.log(`➡️  Received request`);
-      mockServerListener(req.body);
+      const body = JSON.parse(req.body);
+      mockServerListener(body);
+
       res.status(200).send({ mockSuccess: true });
+    });
+
+    // Handles settings calls
+    app.get('/settings/:writeKey/*', (req, res) => {
+      console.log(`➡️  Replying with Settings`);
+      res.status(200).send({
+        integrations: {
+          'Segment.io': {},
+        },
+      });
     });
 
     server = app.listen(port, () => {

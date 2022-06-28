@@ -14,7 +14,6 @@ describe('SegmentClient', () => {
     config: {
       writeKey: 'SEGMENT_KEY',
       flushAt: 10,
-      retryInterval: 40,
       trackAppLifecycleEvents: true,
     },
     logger: getMockLogger(),
@@ -56,8 +55,6 @@ describe('SegmentClient', () => {
       await client.init();
 
       const flush = jest.spyOn(client, 'flush');
-      // An interval should be set to check each second
-      expect(setInterval).toHaveBeenLastCalledWith(expect.any(Function), 1000);
 
       // Wait 10 secs for the flush interval to happen
       jest.advanceTimersByTime(10 * 1000);
@@ -122,6 +119,19 @@ describe('SegmentClient', () => {
   });
 
   describe('#reset', () => {
+    it('resets all userInfo except anonymousId', () => {
+      client = new SegmentClient(clientArgs);
+      const setUserInfo = jest.spyOn(store.userInfo, 'set');
+
+      client.reset(false);
+
+      expect(setUserInfo).toHaveBeenCalledWith({
+        anonymousId: 'anonymousId',
+        userId: undefined,
+        traits: undefined,
+      });
+    });
+
     it('resets user data, identity, traits', () => {
       client = new SegmentClient(clientArgs);
       const setUserInfo = jest.spyOn(store.userInfo, 'set');
@@ -137,13 +147,12 @@ describe('SegmentClient', () => {
   });
 });
 
-describe.only('SegmentClient onUpdateStore', () => {
+describe('SegmentClient onUpdateStore', () => {
   const store = new MockSegmentStore();
   const clientArgs = {
     config: {
       writeKey: 'SEGMENT_KEY',
       flushAt: 10,
-      retryInterval: 40,
       trackAppLifecycleEvents: true,
     },
     logger: getMockLogger(),
@@ -182,7 +191,6 @@ describe.only('SegmentClient onUpdateStore', () => {
       config: {
         ...clientArgs.config,
         flushAt,
-        retryInterval: 1,
       },
     };
     const segmentClient = new SegmentClient(args);
