@@ -1,9 +1,13 @@
 export type SegmentAppsflyerSettings = {
-  appleAppID?: string;
-  appsFlyerDevKey: string;
+  appId?: string;
+  devKey: string;
   httpFallback: boolean;
   rokuAppID?: string;
   trackAttributionData: boolean;
   type: string;
   versionSettings: { [key: string]: string[] };
+  isDebug?: boolean;
+  onInstallConversionDataListener?: boolean;
+  onDeepLinkListener?: boolean;
+  timeToWaitForATTUserAuthorization?: number;
 };

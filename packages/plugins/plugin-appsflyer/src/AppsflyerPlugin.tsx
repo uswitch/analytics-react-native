@@ -25,6 +25,7 @@ export class AppsflyerPlugin extends DestinationPlugin {
       isDebug: false,
       timeToWaitForATTUserAuthorization: 60,
       onInstallConversionDataListener: true,
+      onDeepLinkListener: true,
     };
 
     const appsflyerSettings = settings.integrations[
@@ -55,10 +56,11 @@ export class AppsflyerPlugin extends DestinationPlugin {
     }
     if (!this.hasInitialized) {
       appsFlyer.initSdk({
-        devKey: this.settings.appsFlyerDevKey,
-        appId: this.settings.appleAppID,
-        onDeepLinkListener: clientConfig?.trackDeepLinks === true,
         ...defaultOpts,
+        ...this.settings,
+        onDeepLinkListener:
+          this.settings.onDeepLinkListener &&
+          clientConfig?.trackDeepLinks === true,
       });
       this.hasInitialized = true;
     }
