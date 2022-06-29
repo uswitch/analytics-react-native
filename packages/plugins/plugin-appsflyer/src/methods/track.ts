@@ -1,5 +1,5 @@
 import appsFlyer from 'react-native-appsflyer';
-import type { TrackEventType } from '@segment/analytics-react-native';
+import type { TrackEventType } from '@uswitch/analytics-react-native';
 
 type Properties = { [key: string]: any };
 

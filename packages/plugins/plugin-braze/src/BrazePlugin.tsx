@@ -3,7 +3,7 @@ import {
   IdentifyEventType,
   PluginType,
   TrackEventType,
-} from '@segment/analytics-react-native';
+} from '@uswitch/analytics-react-native';
 import identify from './methods/identify';
 import track from './methods/track';
 import flush from './methods/flush';

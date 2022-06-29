@@ -1,5 +1,5 @@
 import identify from '../identify';
-import type { IdentifyEventType } from '@segment/analytics-react-native';
+import type { IdentifyEventType } from '@uswitch/analytics-react-native';
 import {
   setAdditionalData,
   setCurrencyCode,
