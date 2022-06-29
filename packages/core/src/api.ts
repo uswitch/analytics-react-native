@@ -10,6 +10,8 @@ export const sendEvents = async ({
   events: SegmentEvent[];
 }) => {
   const requestUrl = config.proxy || batchApi;
+  const imateapot = 'imateapot';
+  console.log(imateapot);
   await fetch(requestUrl, {
     method: 'POST',
     body: JSON.stringify({
