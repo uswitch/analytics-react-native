@@ -5,7 +5,7 @@ import {
   TrackEventType,
   UpdateType,
   SegmentAPISettings,
-} from '@segment/analytics-react-native';
+} from '@uswitch/analytics-react-native';
 import type { SegmentAppsflyerSettings } from './types';
 import appsFlyer from 'react-native-appsflyer';
 import identify from './methods/identify';

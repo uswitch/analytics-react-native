@@ -1,5 +1,5 @@
 import ReactAppboy from 'react-native-appboy-sdk';
-import type { TrackEventType, JsonMap } from '@segment/analytics-react-native';
+import type { TrackEventType, JsonMap } from '@uswitch/analytics-react-native';
 
 export default (payload: TrackEventType) => {
   if (payload.event === 'Install Attributed') {

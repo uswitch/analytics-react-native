@@ -11,7 +11,7 @@ import {
   setHomeCity,
   setCustomUserAttribute,
 } from '../__mocks__/react-native-appboy-sdk';
-import type { IdentifyEventType } from '@segment/analytics-react-native';
+import type { IdentifyEventType } from '@uswitch/analytics-react-native';
 
 describe('#identify', () => {
   beforeEach(() => {

@@ -2,7 +2,7 @@ import ReactAppboy, {
   GenderTypes,
   MonthsAsNumber,
 } from 'react-native-appboy-sdk';
-import type { IdentifyEventType } from '@segment/analytics-react-native';
+import type { IdentifyEventType } from '@uswitch/analytics-react-native';
 
 export default (payload: IdentifyEventType) => {
   if (payload.userId) {
