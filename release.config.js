@@ -11,4 +11,5 @@ module.exports = {
     '@semantic-release/git',
   ],
   extends: 'semantic-release-monorepo',
+  branches: ['master', 'release'],
 };
